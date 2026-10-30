@@ -27,7 +27,7 @@ func RegisterTaskTool(s toolRegistrar, getStore func() *storage.Store) {
 - get: Read task details. Required: taskId. Optional: none. Returns: task metadata, acceptance criteria, plan, notes, spec links, and time spent.
 - update: Modify task fields, ACs, plan, or notes. Required: taskId. Optional: title, description, status, priority, assignee, labels, spec, fulfills, order, addAc, checkAc, uncheckAc, removeAc, plan, notes, appendNotes, clear, return. Returns: compact summary by default; use return=full for the legacy task payload.
 - delete: Remove a task or preview removal. Required: taskId. Optional: dryRun (default true). Returns: deletion preview or confirmation.
-- list: List tasks with filters. Required: none. Optional: status, priority, assignee, label, spec, includeHistorical. Returns: matching task summaries with IDs, titles, statuses, priorities, assignees, labels, and spec links.
+- list: List tasks with filters. Required: none. Optional: status, priority, assignee, unassigned, label, spec, includeHistorical. Returns: matching task summaries with IDs, titles, statuses, priorities, assignees, labels, and spec links.
 - history: View task change history. Required: taskId. Optional: none. Returns: chronological change entries with timestamps and metadata.
 - board: Show tasks grouped by status. Required: none. Optional: none. Returns: board columns containing task summaries by status.
 - archive/unarchive: Preview by default; set execute=true to mutate. Required: taskId.
@@ -119,6 +119,9 @@ func RegisterTaskTool(s toolRegistrar, getStore func() *storage.Store) {
 			),
 			mcp.WithString("label",
 				mcp.Description("Filter by label (list)"),
+			),
+			mcp.WithBoolean("unassigned",
+				mcp.Description("Only Tasks with no assignee; cannot be combined with assignee (list)"),
 			),
 			mcp.WithBoolean("includeHistorical",
 				mcp.Description("Include archived Tasks in the result (list)"),
@@ -241,8 +244,8 @@ var taskActionParams = map[string]map[string]string{
 	"delete": {"taskId": "required - task ID", "dryRun": "preview only without deleting; default true"},
 	"list": {
 		"status": "filter by task status", "priority": "filter by low | medium | high",
-		"assignee": "filter by assignee", "label": "filter by one label",
-		"spec": "filter by linked spec doc path", "includeHistorical": "include archived Tasks in the result",
+		"assignee": "filter by assignee", "unassigned": "only Tasks with no assignee; not with assignee",
+		"label": "filter by one label", "spec": "filter by linked spec doc path", "includeHistorical": "include archived Tasks in the result",
 	},
 	"history": {
 		"taskId": "required - task ID", "metadata": "payload-free paginated history metadata",
@@ -555,9 +558,14 @@ func handleTaskList(getStore func() *storage.Store, req mcp.CallToolRequest) (*m
 	statusFilter, _ := stringArg(args, "status")
 	priorityFilter, _ := stringArg(args, "priority")
 	assigneeFilter, _ := stringArg(args, "assignee")
+	assigneeFilter = strings.TrimSpace(assigneeFilter)
 	labelFilter, _ := stringArg(args, "label")
 	specFilter, _ := stringArg(args, "spec")
+	unassigned := boolArg(args, "unassigned")
 	includeHistorical := boolArg(args, "includeHistorical")
+	if unassigned && assigneeFilter != "" {
+		return errResult("unassigned and assignee cannot be used together")
+	}
 
 	list := store.Tasks.ListActive
 	if includeHistorical {
@@ -576,7 +584,12 @@ func handleTaskList(getStore func() *storage.Store, req mcp.CallToolRequest) (*m
 		if priorityFilter != "" && t.Priority != priorityFilter {
 			continue
 		}
-		if assigneeFilter != "" && t.Assignee != assigneeFilter {
+		// Trimmed like the CLI and UI: a whitespace-only assignee is unassigned.
+		assignee := strings.TrimSpace(t.Assignee)
+		if assigneeFilter != "" && assignee != assigneeFilter {
+			continue
+		}
+		if unassigned && assignee != "" {
 			continue
 		}
 		if labelFilter != "" && !containsString(t.Labels, labelFilter) {

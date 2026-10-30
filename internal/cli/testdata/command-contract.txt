@@ -104,13 +104,14 @@ knowns status	visible	runnable
 knowns sync	visible	runnable	--force:bool --instructions:bool --model:bool --platform:string --skills:bool
 knowns task	visible	runnable
 knowns task archive	visible	runnable	--expected-hash:string --yes:bool
+knowns task assignees	visible	runnable	--assignee:string --include-historical:bool --label:string --priority:string --status:string --unassigned:bool
 knowns task batch-archive	visible	runnable	--yes:bool
 knowns task batch-unarchive	visible	runnable	--yes:bool
 knowns task create	visible	runnable	--ac:stringArray --assignee:string --description:string --fulfills:stringArray --label:stringArray --notes:string --parent:string --plan:string --prefix:string --priority:string --spec:string --status:string
 knowns task edit	visible	runnable	--ac:stringArray --append-notes:string --assignee:string --check-ac:intSlice --description:string --expected-hash:string --fulfills:stringArray --labels:string --notes:string --order:int --parent:string --plan:string --priority:string --remove-ac:intSlice --spec:string --status:string --title:string --uncheck-ac:intSlice
 knowns task hard-delete	visible	runnable	--allow-hard-delete:bool --reason:string --yes:bool
 knowns task history	visible	runnable	--limit:int --metadata:bool --offset:int --revision:string
-knowns task list	visible	runnable	--assignee:string --include-historical:bool --label:string --priority:string --status:string --tree:bool
+knowns task list	visible	runnable	--assignee:string --include-historical:bool --label:string --priority:string --status:string --tree:bool --unassigned:bool
 knowns task unarchive	visible	runnable	--expected-hash:string --yes:bool
 knowns task view	visible	runnable
 knowns template	visible	runnable

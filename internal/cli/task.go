@@ -148,6 +148,9 @@ var taskListCmd = &cobra.Command{
   # Your own high-priority work
   knowns task list --assignee @me --priority high
 
+  # Work nobody has picked up yet
+  knowns task list --unassigned
+
   # As a parent/child tree
   knowns task list --tree`,
 	Short: "List tasks",
@@ -157,38 +160,11 @@ var taskListCmd = &cobra.Command{
 func runTaskList(cmd *cobra.Command, args []string) error {
 	store := getStore()
 
-	statusFilter, _ := cmd.Flags().GetString("status")
-	assigneeFilter, _ := cmd.Flags().GetString("assignee")
-	priorityFilter, _ := cmd.Flags().GetString("priority")
-	labelFilter, _ := cmd.Flags().GetString("label")
 	treeMode, _ := cmd.Flags().GetBool("tree")
-	includeHistorical, _ := cmd.Flags().GetBool("include-historical")
 
-	list := store.Tasks.ListActive
-	if includeHistorical {
-		list = store.Tasks.ListAll
-	}
-	tasks, err := list()
+	filtered, err := listFilteredTasks(cmd, store)
 	if err != nil {
-		return fmt.Errorf("list tasks: %w", err)
-	}
-
-	// Apply filters
-	filtered := make([]*models.Task, 0, len(tasks))
-	for _, t := range tasks {
-		if statusFilter != "" && t.Status != statusFilter {
-			continue
-		}
-		if assigneeFilter != "" && t.Assignee != assigneeFilter {
-			continue
-		}
-		if priorityFilter != "" && t.Priority != priorityFilter {
-			continue
-		}
-		if labelFilter != "" && !containsLabel(t.Labels, labelFilter) {
-			continue
-		}
-		filtered = append(filtered, t)
+		return err
 	}
 
 	// One sort, above the fork into plain / table / interactive, so all three
@@ -254,6 +230,67 @@ func runTaskList(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+// addTaskListFilterFlags declares the filters listFilteredTasks reads, so every
+// command that filters through it accepts the same flags.
+func addTaskListFilterFlags(cmd *cobra.Command) {
+	cmd.Flags().String("status", "", "Filter by status")
+	cmd.Flags().String("assignee", "", "Filter by assignee")
+	cmd.Flags().Bool("unassigned", false, "Only tasks with no assignee")
+	cmd.Flags().String("priority", "", "Filter by priority")
+	cmd.Flags().String("label", "", "Filter by label")
+	cmd.Flags().Bool("include-historical", false, "Include historical entities, including archived Tasks")
+}
+
+// listFilteredTasks loads the tasks the shared list filters select. `task list`
+// and `task assignees` both read their flags through it, so a summary always
+// counts exactly the rows the list would print for the same flags.
+//
+// Assignees compare trimmed, as the UI does: a whitespace-only assignee is
+// unassigned, and " alice " is alice. The match is otherwise exact.
+func listFilteredTasks(cmd *cobra.Command, store *storage.Store) ([]*models.Task, error) {
+	statusFilter, _ := cmd.Flags().GetString("status")
+	assigneeFilter, _ := cmd.Flags().GetString("assignee")
+	assigneeFilter = strings.TrimSpace(assigneeFilter)
+	priorityFilter, _ := cmd.Flags().GetString("priority")
+	labelFilter, _ := cmd.Flags().GetString("label")
+	includeHistorical, _ := cmd.Flags().GetBool("include-historical")
+	unassigned, _ := cmd.Flags().GetBool("unassigned")
+	if unassigned && assigneeFilter != "" {
+		return nil, fmt.Errorf("--unassigned and --assignee cannot be used together")
+	}
+
+	list := store.Tasks.ListActive
+	if includeHistorical {
+		list = store.Tasks.ListAll
+	}
+	tasks, err := list()
+	if err != nil {
+		return nil, fmt.Errorf("list tasks: %w", err)
+	}
+
+	filtered := make([]*models.Task, 0, len(tasks))
+	for _, t := range tasks {
+		if statusFilter != "" && t.Status != statusFilter {
+			continue
+		}
+		assignee := strings.TrimSpace(t.Assignee)
+		if assigneeFilter != "" && assignee != assigneeFilter {
+			continue
+		}
+		if unassigned && assignee != "" {
+			continue
+		}
+		if priorityFilter != "" && t.Priority != priorityFilter {
+			continue
+		}
+		if labelFilter != "" && !containsLabel(t.Labels, labelFilter) {
+			continue
+		}
+		filtered = append(filtered, t)
+	}
+	return filtered, nil
 }
 
 // --- task view ---
@@ -1202,12 +1239,8 @@ func init() {
 	taskCreateCmd.Flags().String("prefix", "", "Custom task ID prefix (2-8 alphanumeric characters)")
 
 	// task list flags
-	taskListCmd.Flags().String("status", "", "Filter by status")
-	taskListCmd.Flags().String("assignee", "", "Filter by assignee")
-	taskListCmd.Flags().String("priority", "", "Filter by priority")
-	taskListCmd.Flags().String("label", "", "Filter by label")
+	addTaskListFilterFlags(taskListCmd)
 	taskListCmd.Flags().Bool("tree", false, "Show tasks as tree hierarchy")
-	taskListCmd.Flags().Bool("include-historical", false, "Include historical entities, including archived Tasks")
 
 	// task history flags (additive; no flags preserve the legacy full output)
 	taskHistoryCmd.Flags().Bool("metadata", false, "List payload-free revision metadata")
@@ -1257,6 +1290,7 @@ func init() {
 	taskCmd.AddCommand(taskBatchArchiveCmd)
 	taskCmd.AddCommand(taskBatchUnarchiveCmd)
 	taskCmd.AddCommand(taskHistoryCmd)
+	taskCmd.AddCommand(taskAssigneesCmd)
 
 	// Register under root
 	rootCmd.AddCommand(taskCmd)
