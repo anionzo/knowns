@@ -1,6 +1,7 @@
 package util
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"os"
@@ -46,6 +47,9 @@ func LoadInstallMetadata() (*InstallMetadata, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Older install.ps1 wrote this file with a UTF-8 BOM (Windows PowerShell
+	// 5.1), which json.Unmarshal rejects.
+	data = bytes.TrimPrefix(data, []byte("\xef\xbb\xbf"))
 	var meta InstallMetadata
 	if err := json.Unmarshal(data, &meta); err != nil {
 		return nil, err

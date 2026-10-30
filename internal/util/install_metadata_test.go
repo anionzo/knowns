@@ -54,6 +54,32 @@ func TestInstallMetadataKeepsScriptLinkPaths(t *testing.T) {
 	}
 }
 
+// Older install.ps1 wrote install.json with Windows PowerShell 5.1's
+// `Set-Content -Encoding UTF8`, which prepends a BOM. `knowns update` must
+// still read those installs (knowns-dev/knowns#155).
+func TestLoadInstallMetadataAcceptsUTF8BOM(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // os.UserHomeDir reads this on Windows
+
+	path := filepath.Join(home, ".knowns", "install.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		t.Fatal(err)
+	}
+	written := "\xef\xbb\xbf" + `{"method": "script", "version": "0.33.0"}` + "\r\n"
+	if err := os.WriteFile(path, []byte(written), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	meta, err := LoadInstallMetadata()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if meta == nil || meta.Method != "script" || meta.Version != "0.33.0" {
+		t.Fatalf("LoadInstallMetadata() = %+v, want method=script version=0.33.0", meta)
+	}
+}
+
 // os.Executable returns the symlink on macOS. A script install linked into
 // /opt/homebrew/bin must still be detected by its real ~/.knowns/bin path,
 // or `knowns update` shells out to a brew that never installed it.
